@@ -1,0 +1,35 @@
+36 pieces (3 of each color, 3 of each size, 4 colors)
+Each piece can either:
+- Belong to the bank
+- Be a discovered star
+- Be part of the white binary star
+- Be part of the black binary star
+- Be a white ship at any of the 36 pieces
+- Be a black ship at any of the 36 pieces
+Giving 4 + (36 * 2) = 76 distinct possibilities for each piece.
+
+There are four important board states:
+- Whose turn (white, black) +2
+- Sacrifice ability? (none, attack, move, construct, transform) +5
+- Sacrifice moves left? (none, one, two, three) +4
+- Movement selection active? (no, yes) +2
+- Repetition count? (zero, one, two, three) +4
+Giving 2 + 5 + 4 + 4 = 15 board state possibilities.
+
+Our embedding matrix will have 76 + 15 = 91 elements.
+Our sequence will have a length of 36 + 4 = 40.
+
+The input will be flattened, normalized, and projected to the model dimension, serving as the input to a feedforward residual tower.
+
+There are several move possibilities:
+- Full-moves: attack one of 36 pieces, construct one like any of 36 pieces
+- Transform: transform any of 36 pieces to one of 3 different colors
+- Sacrifice initiation: sacrifice one of 36 pieces
+- Movement initiation: choose which of 36 pieces to move
+- Movement finish: choose which of 36 pieces to move to
+- Select next piece to build homeworld with: choose one of 12 pieces
+- Trigger catastrophe on any of 36 pieces
+- Pass
+In the event of two or more possibilities having the same outcome, only the one involving the lowest piece number will be allowed.
+We will also want to add one more embedding, to be ran through tanh to produce the win probability.
+This will result in (36 * 2) + (36 * 3) + (36 * 3) + 12 + 36 + 1 + 1 = a 338-dimensional output head.
