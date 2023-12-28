@@ -880,8 +880,12 @@ impl Game {
             None => {
                 // If the target star doesn't have a child ship
                 self.board[tstar_key] = match self.board[tstar_key] {
+                    // Assign the moving piece as the child ship of the target star
+                    Piece::Star { .. } => Piece::Star {
+                        child: fkey
+                    },
                     Piece::BinaryFirst { sibling, .. } => Piece::BinaryFirst {
-                        child: KeyMaybe::some(fkey), // Assign the moving piece as the child ship of the target star
+                        child: KeyMaybe::some(fkey),
                         sibling,
                     },
                     _ => unreachable!(), // Unreachable if the target key isn't of type BinaryFirst
