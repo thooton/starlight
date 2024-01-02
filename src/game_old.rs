@@ -256,7 +256,7 @@ impl Player {
 // Enumeration for special actions in the game
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Special {
-    Move,
+    None,
     Star1,
     Star2,
     Ship,
@@ -283,12 +283,12 @@ impl Turn {
     // Function to calculate the next turn in the game
     fn next(self) -> Self {
         let (player, special) = match (self.player, self.special) {
-            (p, Special::Move) => (p.inv(), Special::Move),
+            (p, Special::None) => (p.inv(), Special::None),
             (p, Special::Star1) => (p, Special::Star2),
             (p, Special::Star2) => (p, Special::Ship),
             (Player::White, Special::Ship) => (Player::Black, Special::Star1),
-            (Player::Black, Special::Ship) => (Player::White, Special::Move),
-            (p, Special::Sacrifice(1, _)) => (p.inv(), Special::Move),
+            (Player::Black, Special::Ship) => (Player::White, Special::None),
+            (p, Special::Sacrifice(1, _)) => (p.inv(), Special::None),
             (p, Special::Sacrifice(v, a)) => (p, Special::Sacrifice(v - 1, a)),
         };
         Self { player, special }
@@ -470,6 +470,12 @@ struct Game {
     bstar: KeyMaybe,
 }
 
+struct 
+
+impl Game {
+    
+}
+
 impl Game {
     // Constructor method to create a new game instance
     pub fn new() -> Self {
@@ -507,7 +513,7 @@ impl Game {
 
         // Check if the current turn allows an attack
         let is_sacrifice = match self.turn.special {
-            Special::Move => false,
+            Special::None => false,
             Special::Sacrifice(_, Ability::Attack) => true,
             _ => return false,
         };
@@ -557,7 +563,7 @@ impl Game {
 
         // Check if the current turn allows a sacrifice for construction
         let is_sacrifice = match self.turn.special {
-            Special::Move => false,
+            Special::None => false,
             Special::Sacrifice(_, Ability::Construct) => true,
             _ => return false,
         };
@@ -617,7 +623,7 @@ impl Game {
 
         // Check if the current turn allows a sacrifice for transformation
         let is_sacrifice = match self.turn.special {
-            Special::Move => false,
+            Special::None => false,
             Special::Sacrifice(_, Ability::Transform) => true,
             _ => return false,
         };
@@ -726,7 +732,7 @@ impl Game {
 
         // Check if the current turn allows a sacrifice
         match self.turn.special {
-            Special::Move => {}
+            Special::None => {}
             _ => return false,
         };
 
@@ -768,7 +774,7 @@ impl Game {
 
         // Check if the current turn allows movement
         let is_sacrifice = match self.turn.special {
-            Special::Move => false,
+            Special::None => false,
             Special::Sacrifice(_, Ability::Move) => true,
             _ => return false,
         };
@@ -1113,14 +1119,12 @@ impl Game {
     fn process_pass(&mut self) {
         self.turn = Turn {
             player: self.turn.player.inv(),
-            special: Special::Move,
+            special: Special::None,
         };
         self.force_catastrophes();
     }
 
     pub fn process_move(&mut self, m: Move) -> bool {
-        let us = self.turn.player;
-        let them = us.inv();
         match m {
             Move::Attack(tkey) => self.process_attack(tkey),
             Move::Construct(tkey) => self.process_construct(tkey),
@@ -1140,3 +1144,4 @@ impl Game {
         return self.process_move(MOVES[i]);
     }
 }
+
