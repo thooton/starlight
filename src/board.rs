@@ -1,11 +1,81 @@
 use std::alloc::Layout;
 
-#[derive(Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Debug)]
 #[repr(u8)]
 enum Size {
     Small = 0,
     Medium = 1,
     Large = 2,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
+enum Color {
+    Red = 0 << 4,
+    Yellow = 1 << 4,
+    Green = 2 << 4,
+    Blue = 3 << 4,
+}
+
+#[derive(Clone, Copy)]
+struct Bank(u32);
+
+impl Bank {
+    const fn new() -> Bank {
+        Bank(0xFFFF_FFFF)
+    }
+
+    fn index(&self, size: Size, color: Color) -> u32 {
+        return (size as u32) * (((color as u32) >> 4) + 1)
+    }
+
+    fn available(&self, size: Size, color: Color) -> bool {
+        let mask = 0b11 << self.index(size, color);
+        (self.0 & mask) != 0
+    }
+
+    fn get(&mut self, size: Size, color: Color) -> Option<()> {
+        let index = self.index(size, color);
+        let mask = 0b11 << index;
+        if (self.0 & mask) != 0 {
+            self.0 -= 0b01 << index;
+            Some(())
+        } else {
+            None
+        }
+    }
+
+    fn put(&mut self, size: Size, color: Color) -> Result<(), ()> {
+        let index = self.index(size, color);
+        let mask = 0b11 << index;
+        if (self.0 & mask) != mask {
+            self.0 += 0b01 << index;
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+}
+
+#[test]
+fn test_bank() {
+    let mut bank = Bank::new();
+
+    for size in [Size::Small, Size::Medium, Size::Large] {
+        for color in [Color::Red, Color::Yellow, Color::Green, Color::Blue] {
+            assert!(bank.available(size, color));
+            for _ in 0..3 {
+                assert_eq!(bank.get(size, color), Some(()));
+            }
+            assert_eq!(bank.get(size, color), None);
+            assert!(!bank.available(size, color));
+            for _ in 0..3 {
+                assert!(bank.put(size, color).is_ok());
+                assert!(bank.available(size, color));
+            }
+            assert!(bank.put(size, color).is_err());
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -15,15 +85,6 @@ enum Role {
     Ship = 1 << 2,
     White = 2 << 2,
     Black = 3 << 2,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-enum Color {
-    Red = 0 << 4,
-    Yellow = 1 << 4,
-    Green = 2 << 4,
-    Blue = 3 << 4,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -104,70 +165,165 @@ impl Piece {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct Key(u8);
-impl Key {
-    pub fn new(key: u8) -> Self {
-        assert!(key < 36);
-        return Self(key);
-    }
-}
+type Key = u8;
 
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 enum MoveData {
     Attack { piece: Key },
     Move { piece: Key, system: Key },
     Construct { piece: Key },
     Transform { piece: Key, color: Color },
     Sacrifice { piece: Key },
+    Select { size: Size, color: Color },
+    Catastrophe { piece: Key },
+    Pass
 }
+
 
 pub struct Move(u16);
 impl Move {
-    const MOVE_TYPE_MASK: u16 = 0b1100_0000_0000_0000;
-    const PIECE_KEY_MASK: u16 = 0b0011_1111_0000_0000;
-    const SYS_KEY_COLOR_MASK: u16 = 0b0000_0000_1111_1111;
+    const B3_MASK: u16 = 0b1110_0000_0000_0000;
+    const B6_MASK: u16 = 0b0001_1111_1000_0000;
+    const B7_MASK: u16 = 0b0000_0000_0111_1111;
 
-    const MOVE_TYPE_SHIFT: u16 = 14;
-    const PIECE_KEY_SHIFT: u16 = 8;
+    const B3_SHIFT: u16 = 13;
+    const B6_SHIFT: u16 = 7;
 
     fn new(data: MoveData) -> Self {
         Self(match data {
-            MoveData::Attack { piece_key } => piece_key as u16,
-            MoveData::Move { piece_key, sys_key } => {
-                (0b01 << Self::MOVE_TYPE_SHIFT)
-                    | ((piece_key as u16) << Self::PIECE_KEY_SHIFT)
-                    | (sys_key as u16)
+            MoveData::Attack { piece } => {
+                (0b000 << Self::B3_SHIFT) | (piece as u16)
             }
-            MoveData::Construct { piece_key } => {
-                (0b10 << Self::MOVE_TYPE_SHIFT) | (piece_key as u16)
+            MoveData::Move { piece, system } => {
+                (0b001 << Self::B3_SHIFT)
+                    | ((piece as u16) << Self::B6_SHIFT)
+                    | (system as u16)
             }
-            MoveData::Transform { piece_key, color } => {
-                (0b11 << Self::MOVE_TYPE_SHIFT)
-                    | ((piece_key as u16) << Self::PIECE_KEY_SHIFT)
+            MoveData::Construct { piece } => {
+                (0b010 << Self::B3_SHIFT) | (piece as u16)
+            }
+            MoveData::Transform { piece, color } => {
+                (0b011 << Self::B3_SHIFT)
+                    | ((piece as u16) << Self::B6_SHIFT)
                     | (color as u16)
             }
+            MoveData::Sacrifice { piece } => {
+                (0b100 << Self::B3_SHIFT) | (piece as u16)
+            }
+            MoveData::Select { size, color } => {
+                (0b101 << Self::B3_SHIFT)
+                    | ((size as u16) << Self::B6_SHIFT)
+                    | (color as u16)
+            }
+            MoveData::Catastrophe { piece } => {
+                (0b110 << Self::B3_SHIFT) | (piece as u16)
+            }
+            MoveData::Pass => 0b111 << Self::B3_SHIFT,
         })
     }
 
     fn data(self) -> MoveData {
-        let move_type = (self.0 & Self::MOVE_TYPE_MASK) >> Self::MOVE_TYPE_SHIFT;
-        let piece_key = ((self.0 & Self::PIECE_KEY_MASK) >> Self::PIECE_KEY_SHIFT) as u8;
-        let sys_key_color = (self.0 & Self::SYS_KEY_COLOR_MASK) as u8;
-
-        match move_type {
-            0b00 => MoveData::Attack { piece_key },
-            0b01 => MoveData::Move {
-                piece_key,
-                sys_key: sys_key_color,
+        let b3 = ((self.0 & Self::B3_MASK) >> Self::B3_SHIFT) as u8;
+        let b6 = ((self.0 & Self::B6_MASK) >> Self::B6_SHIFT) as u8;
+        let b7 = (self.0 & Self::B7_MASK) as u8;
+    
+        match b3 {
+            0b000 => MoveData::Attack { piece: b7 },
+            0b001 => MoveData::Move {
+                piece: b6,
+                system: b7,
             },
-            0b10 => MoveData::Construct { piece_key },
-            0b11 => MoveData::Transform {
-                piece_key,
-                color: unsafe { std::mem::transmute(sys_key_color) },
+            0b010 => MoveData::Construct {
+                piece: b7,
             },
+            0b011 => MoveData::Transform {
+                piece: b6,
+                color: unsafe {
+                    std::mem::transmute(b7)
+                },
+            },
+            0b100 => MoveData::Sacrifice {
+                piece: b7,
+            },
+            0b101 => MoveData::Select {
+                size: unsafe {
+                    std::mem::transmute(b6)
+                },
+                color: unsafe {
+                    std::mem::transmute(b7)
+                },
+            },
+            0b110 => MoveData::Catastrophe {
+                piece: b7,
+            },
+            0b111 => MoveData::Pass,
             _ => unreachable!(),
         }
     }
+}
+
+#[test]
+fn test_move_attack() {
+    let move_data = MoveData::Attack { piece: 1 };
+    let mv = Move::new(move_data);
+    assert_eq!(mv.0, 0b0000_0000_0000_0001u16);
+    assert_eq!(mv.data(), move_data);
+}
+
+#[test]
+fn test_move_move() {
+    let move_data = MoveData::Move { piece: 2, system: 3 };
+    let mv = Move::new(move_data);
+    assert_eq!(mv.0, 0b0010_0001_0000_0011u16);
+    assert_eq!(mv.data(), move_data);
+}
+
+#[test]
+fn test_move_construct() {
+    let move_data = MoveData::Construct { piece: 4 };
+    let mv = Move::new(move_data);
+    assert_eq!(mv.0, 0b0100_0000_0000_0100u16);
+    assert_eq!(mv.data(), move_data);
+}
+
+#[test]
+fn test_move_transform() {
+    let move_data = MoveData::Transform { piece: 5, color: Color::Red };
+    let mv = Move::new(move_data);
+    assert_eq!(mv.0, 0b0110_0010_1000_0000u16);
+    assert_eq!(mv.data(), move_data);
+}
+
+#[test]
+fn test_move_sacrifice() {
+    let move_data = MoveData::Sacrifice { piece: 6 };
+    let mv = Move::new(move_data);
+    assert_eq!(mv.0, 0b1000_0000_0000_0110u16);
+    assert_eq!(mv.data(), move_data);
+}
+
+#[test]
+fn test_move_select() {
+    let move_data = MoveData::Select { size: Size::Small, color: Color::Blue };
+    let mv = Move::new(move_data);
+    assert_eq!(mv.0, 0b1010_0000_0011_0000u16);
+    assert_eq!(mv.data(), move_data);
+}
+
+#[test]
+fn test_move_catastrophe() {
+    let move_data = MoveData::Catastrophe { piece: 8 };
+    let mv = Move::new(move_data);
+    assert_eq!(mv.0, 0b1100_0000_0000_1000u16);
+    assert_eq!(mv.data(), move_data);
+}
+
+#[test]
+fn test_move_pass() {
+    let move_data = MoveData::Pass;
+    let mv = Move::new(move_data);
+    assert_eq!(mv.0, 0b1110_0000_0000_0000u16);
+    assert_eq!(mv.data(), move_data);
 }
 
 // Enumeration for Players
@@ -249,6 +405,7 @@ fn wyhash64(a: u64, b: u64) -> u64 {
 
 pub struct BoardInner<T: ?Sized> {
     hash: u64,
+    bank: Bank,
     turn: Turn,
     pieces: T,
 }
@@ -259,12 +416,10 @@ impl Board {
     pub fn new() -> Box<Board> {
         Box::new(BoardInner::<[Piece; 1]> {
             hash: 0,
+            bank: Bank::new(),
             turn: Turn::initial(),
             pieces: [Piece::PAD_PIECE],
         })
-    }
-    pub fn moves(&self) -> Vec<Move> {
-
     }
 }
 

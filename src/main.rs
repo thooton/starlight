@@ -1,5 +1,3 @@
 mod board;
 
-fn main() {
-    
-}
+fn main() {}
